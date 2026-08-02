@@ -1,0 +1,15 @@
+{
+  "name": "manga-screen-translator",
+  "version": "1.6.0",
+  "private": true,
+  "type": "module",
+  "description": "Tooling for the Manga Screen Translator Chrome extension. The extension itself loads unbundled; this package only provides linting and tests.",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "eslint": "9.15.0",
+    "globals": "15.12.0"
+  }
+}

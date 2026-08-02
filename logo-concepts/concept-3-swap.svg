@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Japanese to English translation</title>
+  <rect width="128" height="128" rx="24" fill="#0f766e"/>
+  <path d="M28 19h41a9 9 0 0 1 9 9v54a9 9 0 0 1-9 9H46l-16 13 3-13h-5a9 9 0 0 1-9-9V28a9 9 0 0 1 9-9Z" fill="#ecfeff"/>
+  <path d="M42 35v38M57 35v38M36 48h27M36 63h27" fill="none" stroke="#0f766e" stroke-linecap="round" stroke-width="6"/>
+  <path d="M82 44h22a8 8 0 0 1 8 8v39a8 8 0 0 1-8 8H93l-13 10 3-10h-1a8 8 0 0 1-8-8V52a8 8 0 0 1 8-8Z" fill="#facc15"/>
+  <path d="m85 86 8-25 8 25M88 77h10" fill="none" stroke="#134e4a" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"/>
+</svg>

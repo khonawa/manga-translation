@@ -1,0 +1,39 @@
+/**
+ * Shared design tokens.
+ *
+ * These colours were previously hardcoded three times: in the popup's inline <style>, in the
+ * options page's inline <style>, and in styles.css. Changing the accent meant hunting through
+ * all three, and they had already drifted. Extension pages link this file; the content script
+ * gets it via web_accessible_resources so injected UI matches too.
+ */
+:root,
+:host {
+  /* Surfaces, darkest to lightest */
+  --manga-bg: #18181b;
+  --manga-surface: #27272a;
+  --manga-surface-raised: #3f3f46;
+  --manga-border: #3f3f46;
+  --manga-border-strong: #52525b;
+
+  /* Text */
+  --manga-text: #ffffff;
+  --manga-text-muted: #a1a1aa;
+  --manga-text-subtle: #71717a;
+  --manga-text-label: #e4e4e7;
+
+  /* Accents */
+  --manga-accent: #3b82f6;
+  --manga-accent-link: #60a5fa;
+  --manga-primary: #2563eb;
+  --manga-primary-hover: #1d4ed8;
+  --manga-success: #059669;
+  --manga-success-hover: #047857;
+  --manga-success-text: #22c55e;
+  --manga-danger: #dc2626;
+
+  /* Shape and elevation */
+  --manga-radius: 6px;
+  --manga-radius-sm: 4px;
+  --manga-shadow: 0 8px 30px rgba(0, 0, 0, .45);
+  --manga-shadow-sm: 0 8px 24px rgba(0, 0, 0, .45);
+}

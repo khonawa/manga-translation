@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Manga panel translation focus</title>
+  <rect width="128" height="128" rx="24" fill="#f5f1e8"/>
+  <path d="M25 16h78a10 10 0 0 1 10 10v76a10 10 0 0 1-10 10H25a10 10 0 0 1-10-10V26a10 10 0 0 1 10-10Z" fill="#fff" stroke="#171717" stroke-width="7"/>
+  <path d="M42 39h44M42 54h31M42 69h38" fill="none" stroke="#171717" stroke-linecap="round" stroke-width="7"/>
+  <path d="M18 45V22a4 4 0 0 1 4-4h23M83 18h23a4 4 0 0 1 4 4v23M110 83v23a4 4 0 0 1-4 4H83M45 110H22a4 4 0 0 1-4-4V83" fill="none" stroke="#dc2626" stroke-linecap="round" stroke-width="9"/>
+  <rect x="37" y="83" width="54" height="17" rx="8.5" fill="#171717"/>
+  <path d="M48 91.5h32" stroke="#fff" stroke-linecap="round" stroke-width="5"/>
+</svg>

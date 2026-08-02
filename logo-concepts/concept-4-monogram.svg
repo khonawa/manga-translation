@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Manga Translator monogram</title>
+  <rect width="128" height="128" rx="24" fill="#e11d48"/>
+  <path d="M18 33a11 11 0 0 1 11-11h70a11 11 0 0 1 11 11v55a11 11 0 0 1-11 11H70l-21 16 4-16H29a11 11 0 0 1-11-11V33Z" fill="#fff"/>
+  <path d="M34 81V42l15 23 15-23v39" fill="none" stroke="#18181b" stroke-linecap="round" stroke-linejoin="round" stroke-width="9"/>
+  <path d="M74 44h25M86.5 44v37" fill="none" stroke="#e11d48" stroke-linecap="round" stroke-width="9"/>
+</svg>
