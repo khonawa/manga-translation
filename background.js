@@ -2,6 +2,7 @@ import { getProvider, providerRates, DEFAULT_PROVIDER } from './src/shared/provi
 import { OCR_SCHEMA, COMBINED_SCHEMA, TRANSLATION_SCHEMA, openAiResponseFormat, anthropicToolChoice } from './src/shared/schema.js';
 import { normalizeBubbles } from './src/shared/bubbles.js';
 import { parseJsonArray, normalizeTranslationArray } from './src/shared/parse.js';
+import { normalizeApiProfiles, orderedEnabledProfiles } from './src/shared/routing.js';
 
 const activeRequests = new Map();
 const CACHE_PREFIX = 'translationCache:';
@@ -205,9 +206,11 @@ async function runTranslationPipeline(base64Image, requestId, bypassCache = fals
   const config = await getApiConfig();
   const cacheKey = CACHE_PREFIX + await hashText(base64Image + JSON.stringify({
     schema: CACHE_SCHEMA_VERSION,
-    provider: config.provider,
-    endpoint: config.apiEndpoint,
-    model: config.apiModel,
+    profiles: config.apiProfiles.filter(profile => profile.enabled).map(profile => ({
+      provider: profile.provider,
+      endpoint: profile.apiEndpoint,
+      model: profile.apiModel
+    })),
     sourceLanguage: config.sourceLanguage || 'Automatic',
     targetLanguage: config.targetLanguage,
     separateStages: config.separateStages
@@ -340,8 +343,8 @@ async function retryBubbleTranslation(source, requestId, tabId) {
 
 async function getApiConfig(override = {}) {
   const [stored, session] = await Promise.all([chrome.storage.local.get([
-    'provider', 'apiEndpoint', 'apiKey', 'apiModel', 'sourceLanguage', 'targetLanguage', 'separateStages', 'customInputRate', 'customOutputRate'
-  ]), chrome.storage.session.get('apiKey')]);
+    'provider', 'apiEndpoint', 'apiKey', 'apiModel', 'apiProfiles', 'apiProfileCursor', 'sourceLanguage', 'targetLanguage', 'separateStages', 'customInputRate', 'customOutputRate'
+  ]), chrome.storage.session.get(['apiKey', 'apiProfiles'])]);
   const config = { ...stored, apiKey: session.apiKey || stored.apiKey, ...override };
   config.provider ||= DEFAULT_PROVIDER;
   config.targetLanguage ||= 'English';
@@ -350,6 +353,16 @@ async function getApiConfig(override = {}) {
   const preset = getProvider(config.provider);
   config.apiEndpoint = config.apiEndpoint?.trim() || preset.endpoint;
   config.apiModel = config.apiModel?.trim() || preset.model;
+
+  const suppliedProfile = override.apiEndpoint || override.apiModel || override.apiKey;
+  config.apiProfiles = normalizeApiProfiles(
+    suppliedProfile ? [{ ...override, enabled: true }] : (session.apiProfiles || stored.apiProfiles),
+    config
+  );
+  if (!config.apiProfiles.some(profile => profile.enabled)) {
+    throw new Error('No API profiles are enabled. Open the extension settings and enable at least one.');
+  }
+  config.apiProfileCursor = Number(stored.apiProfileCursor) || 0;
 
   if (!config.apiEndpoint) throw new Error('No API endpoint is configured. Open the extension settings and enter one.');
   if (!config.apiModel) throw new Error('No model name is configured. Open the extension settings and enter one.');
@@ -441,9 +454,34 @@ async function requestWithRetry(url, init, signal) {
 }
 
 async function callChatCompletions(config, signal, messages, structured) {
+  const profiles = orderedEnabledProfiles(config.apiProfiles, config.apiProfileCursor);
+  let lastError;
+  for (const profile of profiles) {
+    const routedConfig = { ...config, ...profile };
+    try {
+      const result = await callSingleProvider(routedConfig, signal, messages, structured);
+      const enabledProfiles = config.apiProfiles.filter(candidate => candidate.enabled);
+      const usedIndex = enabledProfiles.findIndex(candidate => candidate.id === profile.id);
+      const nextCursor = (usedIndex + 1) % enabledProfiles.length;
+      config.apiProfileCursor = nextCursor;
+      await chrome.storage.local.set({ apiProfileCursor: nextCursor });
+      return result;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      lastError = error;
+      console.warn(`API profile "${profile.name}" failed; trying the next enabled profile.`, error.message);
+    }
+  }
+  throw new Error(`All enabled API profiles failed. Last error: ${lastError?.message || 'Unknown provider error'}`);
+}
+
+async function callSingleProvider(config, signal, messages, structured) {
   if (config.provider === 'anthropic') return callAnthropic(config, signal, messages, structured);
   const headers = { 'Content-Type': 'application/json' };
-  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+  if (config.apiKey) {
+    headers.Authorization = `Bearer ${config.apiKey}`;
+    if (isGoogleAiStudioEndpoint(config.apiEndpoint)) headers['x-goog-api-key'] = config.apiKey;
+  }
 
   // Only ask for strict JSON where the provider actually supports it; local runtimes
   // reject the field, so they keep using the lenient parser.
@@ -464,6 +502,14 @@ async function callChatCompletions(config, signal, messages, structured) {
       requests: 1
     }
   };
+}
+
+function isGoogleAiStudioEndpoint(endpoint) {
+  try {
+    return new URL(endpoint).hostname === 'generativelanguage.googleapis.com';
+  } catch {
+    return false;
+  }
 }
 
 async function callAnthropic(config, signal, messages, structured) {
