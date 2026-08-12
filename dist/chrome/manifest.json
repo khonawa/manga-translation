@@ -1,0 +1,87 @@
+{
+  "manifest_version": 3,
+  "name": "Manga Screen Translator",
+  "version": "1.6",
+  "description": "Select manga panels to translate in real-time using Cloud AI.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "downloads",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "commands": {
+    "start-snip": {
+      "suggested_key": {
+        "default": "Alt+Q",
+        "mac": "Alt+Q"
+      },
+      "description": "Start Snip Translation"
+    },
+    "full-page-ocr": {
+      "suggested_key": {
+        "default": "Alt+1",
+        "mac": "Alt+1"
+      },
+      "description": "Translate Visible Screen"
+    },
+    "save-region-screenshot": {
+      "suggested_key": {
+        "default": "Alt+2",
+        "mac": "Alt+2"
+      },
+      "description": "Save Region Screenshot"
+    },
+    "save-page-screenshot": {
+      "suggested_key": {
+        "default": "Alt+3",
+        "mac": "Alt+3"
+      },
+      "description": "Save Visible Screen Screenshot"
+    },
+    "clear-overlays": {
+      "description": "Clear Overlays"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "css": [
+        "src/shared/theme.css",
+        "styles.css"
+      ],
+      "js": [
+        "browser-polyfill.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Manga Screen Translator</title>
+  <link rel="stylesheet" href="src/shared/theme.css">
+  <style>
+    body { 
+      width: 230px; 
+      font-family: sans-serif; 
+      padding: 12px; 
+      margin: 0; 
+      background: var(--manga-bg); 
+      color: var(--manga-text); 
+      text-align: center; 
+      box-sizing: border-box;
+    }
+    button { 
+      width: 100%; 
+      padding: 10px; 
+      margin-bottom: 8px; 
+      border: none; 
+      border-radius: var(--manga-radius); 
+      font-weight: bold; 
+      cursor: pointer; 
+      transition: 0.1s; 
+    }
+    .btn-primary { background: var(--manga-primary); color: var(--manga-text); }
+    .btn-primary:hover { background: var(--manga-primary-hover); }
+    .btn-accent { background: var(--manga-success); color: var(--manga-text); }
+    .btn-accent:hover { background: var(--manga-success-hover); }
+    .btn-secondary { background: var(--manga-surface); color: var(--manga-text-muted); border: 1px solid var(--manga-border); }
+    .btn-secondary:hover { background: var(--manga-surface-raised); color: var(--manga-text); }
+    .shortcut-hint { font-size: 11px; color: var(--manga-text-subtle); margin-bottom: 8px; }
+    .shortcut-hint a { color: var(--manga-accent-link); }
+    .shortcut { font-weight: normal; opacity: .75; font-size: 11px; }
+    .shortcut:empty { display: none; }
+
+    .divider { border-top: 1px solid var(--manga-surface); margin: 10px 0; }
+    
+    .section-title {
+      font-size: 11px;
+      font-weight: bold;
+      color: var(--manga-text-muted);
+      text-align: left;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-group {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      text-align: left;
+    }
+
+    .form-group label {
+      font-size: 12px;
+      color: var(--manga-text-label);
+    }
+
+    .form-group input, .form-group select {
+      background: var(--manga-surface);
+      border: 1px solid var(--manga-border);
+      color: var(--manga-text);
+      border-radius: var(--manga-radius-sm);
+      padding: 4px 6px;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .form-group input[type="number"] {
+      width: 55px;
+      text-align: center;
+    }
+
+    .form-group select {
+      width: 120px;
+    }
+
+    .form-group input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--manga-success);
+      cursor: pointer;
+    }
+
+    .unit { font-size: 11px; color: var(--manga-text-subtle); }
+  </style>
+</head>
+<body>
+  <button id="snipBtn" class="btn-primary" data-command="start-snip">
+    <span aria-hidden="true">✂️</span> Snip Region <span class="shortcut"></span>
+  </button>
+  <button id="fullPageBtn" class="btn-accent" data-command="full-page-ocr">
+    Visible Screen OCR <span class="shortcut"></span>
+  </button>
+  <button id="saveRegionBtn" class="btn-secondary" data-command="save-region-screenshot">
+    Save Region <span class="shortcut"></span>
+  </button>
+  <button id="savePageBtn" class="btn-secondary" data-command="save-page-screenshot">
+    Save Visible Screen <span class="shortcut"></span>
+  </button>
+  <button id="settingsBtn" class="btn-secondary"><span aria-hidden="true">⚙️</span> Open Full Settings</button>
+
+  <div class="divider"></div>
+  <button id="autoTranslateBtn" class="btn-secondary">Auto Translate: OFF</button>
+
+  <div class="shortcut-hint">
+    Press ESC to clear overlays &middot; <a id="shortcutsLink" href="#">Edit shortcuts</a>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Quick Tuning Controls -->
+  <div class="section-title">Bubble Dimensions</div>
+
+  <div class="form-group">
+    <label for="bubbleScaleMode">Scale Mode</label>
+    <select id="bubbleScaleMode">
+      <option value="auto">Auto (Adaptive)</option>
+      <option value="manual">Manual %</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="displayMode">Display Mode</label>
+    <select id="displayMode">
+      <option value="overlay">Overlay</option>
+      <option value="side-panel-numbered">Numbered Panel (Automatic)</option>
+      <option value="side-by-side">Side by Side</option>
+      <option value="replace">Replace Text</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="readingOrder">Reading Order</label>
+    <select id="readingOrder">
+      <option value="rtl">Top-Right to Bottom-Left</option>
+      <option value="ltr">Top-Left to Bottom-Right</option>
+    </select>
+  </div>
+  
+  <div id="manualControls" style="display:none">
+    <div class="form-group">
+      <label for="widthScale">Width Scale</label>
+      <div>
+        <input type="number" id="widthScale" value="150" min="50" max="400" aria-label="Width scale, percent"> <span aria-hidden="true" class="unit">%</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="heightScale">Height Scale</label>
+      <div>
+        <input type="number" id="heightScale" value="100" min="50" max="400" aria-label="Height scale, percent"> <span aria-hidden="true" class="unit">%</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label for="bubbleType">Bubble Style</label>
+    <select id="bubbleType">
+      <option value="adaptive">Adaptive</option>
+      <option value="rectangle">Rectangle</option>
+      <option value="oval">Oval</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="clearOverlaysOnPageTurn">Clear on Page Turn</label>
+    <input type="checkbox" id="clearOverlaysOnPageTurn">
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Manga Screen Translator
 
-A Chrome extension (Manifest V3) that translates manga, manhwa, and webtoon speech bubbles in place. Draw a box around a panel and the extension captures that region, sends it to a vision-capable AI provider, and renders the translated text back over the original bubbles — streamed in bubble-by-bubble as the model writes them.
+A cross-browser extension (Chrome & Firefox, Manifest V3) that translates manga, manhwa, and webtoon speech bubbles in place. Draw a box around a panel and the extension captures that region, sends it to a vision-capable AI provider, and renders the translated text back over the original bubbles — streamed in bubble-by-bubble as the model writes them.
 
 ## Features
 
@@ -12,17 +12,34 @@ A Chrome extension (Manifest V3) that translates manga, manhwa, and webtoon spee
 - **API rotation & failover** — configure several API profiles; requests rotate across them, fall over automatically on error, and prefer the fastest based on measured latency.
 - **Smart caching** — translations are cached by image content hash for 30 days, so re-snipping a region is instant. Duplicate in-flight requests are deduplicated.
 - **Persistent overlays** — translations are restored when you revisit a page.
+- **Auto-translate mode** — automatically re-translate when the page changes (toggle in the popup).
+- **Floating control panel** — an optional draggable on-page panel with translate / auto-translate / dismiss buttons, designed for touch devices.
 - **Flexible display** — overlay bubbles (adaptive/rectangle/oval), side-panel list, adjustable fonts, colors, sizing, and reading order (RTL/LTR).
 - **Screenshots** — save a region or the visible page as an image.
 - **Usage tracking** — per-request token and cost estimates.
 
-## Installation (unpacked / development)
+## Installation
 
-1. Clone or download this repository.
+### Chrome / Edge / Chromium
+
+1. Build the extension folder (or use the repo root directly):
+   ```bash
+   npm install
+   npm run build        # produces dist/chrome and dist/firefox
+   ```
 2. Open `chrome://extensions` in Chrome.
 3. Enable **Developer mode** (top right).
-4. Click **Load unpacked** and select this folder.
+4. Click **Load unpacked** and select the `dist/chrome` folder (or the repo root).
 5. The options page opens automatically on first install — configure a provider there.
+
+### Firefox (128+)
+
+1. Build as above, then either:
+   - **Temporary install:** open `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → pick any file inside `dist/firefox`.
+   - **Live-reload development:** `npm run dev:firefox` (uses `web-ext run`).
+2. Configure a provider in the options page.
+
+> The Firefox build requires Firefox 128 or newer (module service worker + `storage.session`).
 
 ## Setup
 
@@ -31,7 +48,7 @@ A Chrome extension (Manifest V3) that translates manga, manhwa, and webtoon spee
 3. Click **Test All Enabled APIs** to verify the connection.
 4. Optionally add more API profiles for rotation/failover, set source/target languages, and customize appearance.
 
-API keys are stored in Chrome extension storage on your device. Enable **"Keep key only until Chrome closes"** to use session-only storage instead.
+API keys are stored in extension storage on your device. Enable **"Keep key only until Chrome closes"** to use session-only storage instead.
 
 ## Usage
 
@@ -43,9 +60,14 @@ API keys are stored in Chrome extension storage on your device. Enable **"Keep k
 | Save Visible Screen Screenshot | `Alt+3` | Capture the visible page |
 | Clear Overlays | — | Remove all translation overlays |
 
-Shortcuts can be remapped at `chrome://extensions/shortcuts`.
+Shortcuts can be remapped at `chrome://extensions/shortcuts` (or `about:addons` → gear → Manage Extension Shortcuts in Firefox).
 
 Right-click a translated bubble (or focus it and press `Enter`) for actions, `F2` to edit the text inline, and drag to reposition it.
+
+### Auto-translate & floating panel
+
+- **Auto Translate** (popup toggle) watches for page changes and re-runs a full-page translation automatically. The toolbar badge shows `AUTO` while it's on.
+- **Floating panel** (Settings → "Show floating control panel on pages") adds a small draggable pill to the page with buttons for translate, auto-translate toggle, and dismiss. Its position is remembered. Useful on tablets and touchscreens.
 
 ## How it works
 
@@ -69,33 +91,43 @@ Key design points:
 ## Project structure
 
 ```
-manifest.json        Extension manifest (MV3)
-background.js        Service worker: capture, API calls, caching, routing, streaming
-content.js           Content script: snipping UI, overlay rendering, page sessions
-popup.html/.js       Toolbar popup: quick actions and display settings
-options.html/.js     Settings page: providers, languages, appearance, usage
-styles.css           Overlay and bubble styles
+manifest.base.json     Shared manifest (name, icons, permissions, action, commands)
+manifest.chrome.json   Chrome overrides (service worker, content scripts)
+manifest.firefox.json  Firefox overrides (gecko settings, polyfill script)
+background.js          Service worker: capture, API calls, caching, routing, streaming
+content.js             Content script: snipping UI, overlay rendering, page sessions
+browser-polyfill.js    webextension-polyfill (Firefox compatibility)
+popup.html/.js         Toolbar popup: quick actions and display settings
+options.html/.js       Settings page: providers, languages, appearance, usage
+styles.css             Overlay, bubble, and floating-panel styles
 src/shared/
-  providers.js       Provider presets and pricing
-  schema.js          Structured-output schemas (OCR / combined / translation)
-  parse.js           Lenient JSON parsing + streaming region extractor
-  bubbles.js         Bubble validation/normalization
-  routing.js         API profile normalization, rotation, latency ordering
-  theme.css          Shared dark theme variables
-test/                Node test suite for the shared modules
-icons/               Extension icons
+  providers.js         Provider presets and pricing
+  schema.js            Structured-output schemas (OCR / combined / translation)
+  parse.js             Lenient JSON parsing + streaming region extractor
+  bubbles.js           Bubble validation/normalization
+  routing.js           API profile normalization, rotation, latency ordering
+  storage.js           storage.session wrappers with graceful fallback
+  theme.css            Shared dark theme variables
+scripts/
+  build-manifest.js    Merges base + per-browser manifest into manifest.json
+  build-dist.js        Builds clean dist/chrome and dist/firefox folders
+test/                  Node test suite for the shared modules
+icons/                 Extension icons
 ```
 
 ## Development
 
-The extension loads unbundled; `package.json` only provides linting and tests.
+The extension loads unbundled; `package.json` only provides linting, tests, and build scripts.
 
 ```bash
-npm run lint    # ESLint
-npm test        # node --test test/*.test.js
+npm run lint          # ESLint
+npm test              # node --test test/*.test.js
+npm run build         # build dist/chrome and dist/firefox (clean, loadable folders)
+npm run build:chrome  # write manifest.json for Chrome only
+npm run dev:firefox   # build Firefox manifest and launch web-ext run
 ```
 
-After editing, reload the extension at `chrome://extensions` (and refresh the target page for content-script changes).
+The repo root's `manifest.json` is generated — edit `manifest.base.json` plus the per-browser override files, then run a build script. After editing, reload the extension at `chrome://extensions` (and refresh the target page for content-script changes).
 
 ## Privacy & cost notes
 

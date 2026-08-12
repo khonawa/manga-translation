@@ -1,0 +1,136 @@
+:root {
+  --manga-bg-color: #ffffff;
+  --manga-text-color: #000000;
+}
+
+html.manga-capture-active,
+html.manga-capture-active body,
+html.manga-capture-active body * { cursor: crosshair !important; }
+.manga-capture-shield { position: fixed; inset: 0; z-index: 10000000; background: transparent; cursor: crosshair !important; user-select: none; touch-action: none; }
+
+/* Base class applied to all translated bubbles */
+.manga-translation-overlay {
+  position: absolute;
+  background-color: var(--manga-bg-color);
+  color: var(--manga-text-color);
+  border: 2px solid #000000;
+  border-radius: 12px;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  z-index: 999990;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  font-family: var(--manga-font-family, system-ui, sans-serif);
+  font-weight: 700;
+  line-height: 1.18;
+  overflow: visible;
+  height: auto;
+  word-break: normal;
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+
+/* Provisional bubble shown while the rest of the translation is still streaming in. */
+.manga-partial-overlay {
+  opacity: 0.82;
+  border-style: dashed;
+  animation: manga-bubble-in 0.15s ease-out;
+}
+
+@keyframes manga-bubble-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 0.82; transform: scale(1); }
+}
+
+.manga-text-content {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  pointer-events: none;  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+}
+
+.manga-shape-adaptive { padding: 6px 9px; }
+.manga-shape-rectangle { border-radius: 3px; }
+.manga-shape-oval { border-radius: 50%; padding: 10px 8px; overflow: hidden; writing-mode: horizontal-tb !important; }
+
+.manga-replace-overlay { border-color: transparent; box-shadow: none; }
+.manga-overlay-menu { position: fixed; z-index: 10000000; display: grid; min-width: 170px; padding: 5px; background: var(--manga-bg); border: 1px solid var(--manga-border-strong); border-radius: var(--manga-radius); box-shadow: var(--manga-shadow-sm); }
+.manga-overlay-menu button { padding: 7px 9px; border: 0; background: transparent; color: var(--manga-text); text-align: left; cursor: pointer; }
+.manga-overlay-menu button:hover { background: var(--manga-surface-raised); }
+.manga-display-panel { position: fixed; top: 12px; right: 12px; z-index: 999995; width: min(360px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; padding: 14px; box-sizing: border-box; background: var(--manga-bg); color: var(--manga-text); border: 1px solid var(--manga-border-strong); border-radius: var(--manga-radius); box-shadow: var(--manga-shadow); font: 14px/1.4 sans-serif; }
+.manga-panel-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 8px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--manga-border); }
+.manga-panel-item > b { line-height: 1.4; font-variant-numeric: tabular-nums; }
+.manga-side-panel .manga-panel-item { display: block; }
+.manga-side-by-side .manga-panel-item { grid-template-columns: 2.5rem minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.manga-panel-source, .manga-panel-translation { display: block; line-height: 1.4; overflow-wrap: anywhere; }
+.manga-bubble-marker { position: absolute; z-index: 999996; display: grid; place-items: center; width: 22px; height: 22px; transform: translate(-35%, -35%); border: 2px solid var(--manga-text); border-radius: 50%; background: var(--manga-danger); color: var(--manga-text); box-shadow: 0 2px 6px rgba(0,0,0,.5); font: 700 12px/1 sans-serif; pointer-events: none; }
+.manga-retry-status { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 9999999; padding: 10px 14px; background: var(--manga-primary); color: var(--manga-text); border-radius: var(--manga-radius); }
+.manga-overlay-pending { opacity: .55; cursor: wait; }
+
+/* Non-blocking toast, replaces alert() */
+.manga-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10000001; display: flex; gap: 10px; align-items: center; max-width: min(460px, calc(100vw - 32px)); padding: 11px 12px 11px 14px; background: var(--manga-bg); color: var(--manga-text); border: 1px solid var(--manga-border); border-left: 3px solid var(--manga-accent); border-radius: var(--manga-radius); box-shadow: var(--manga-shadow); font: 14px/1.45 system-ui, sans-serif; }
+.manga-toast-error { border-left-color: var(--manga-danger); }
+.manga-toast-text { flex: 1; overflow-wrap: anywhere; }
+
+/* Floating touch control panel — sits below translation overlays (999990) so it
+   never covers translated text, but above page content. */
+#manga-float-panel {
+  position: fixed;
+  z-index: 999989;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--manga-bg);
+  border: 1px solid var(--manga-border-strong);
+  border-radius: 999px;
+  box-shadow: var(--manga-shadow);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#manga-float-panel .manga-fp-drag {
+  cursor: grab;
+  padding: 4px 6px;
+  color: var(--manga-text-subtle);
+  font-size: 13px;
+  line-height: 1;
+  touch-action: none;
+}
+#manga-float-panel .manga-fp-drag:active { cursor: grabbing; }
+#manga-float-panel button.manga-fp-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--manga-surface);
+  color: var(--manga-text);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+#manga-float-panel button.manga-fp-btn:hover { background: var(--manga-surface-raised); }
+#manga-float-panel button.manga-fp-btn.manga-fp-active {
+  background: var(--manga-success);
+  color: #fff;
+}
+.manga-toast-close { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--manga-radius-sm); background: transparent; color: var(--manga-text-muted); font-size: 17px; line-height: 1; cursor: pointer; }
+.manga-toast-close:hover { background: var(--manga-surface-raised); color: var(--manga-text); }
+
+/* Inline translation editing, replaces prompt() */
+.manga-overlay-editing { outline: 2px solid var(--manga-accent); outline-offset: 2px; }
+.manga-overlay-editing .manga-text-content { pointer-events: auto; cursor: text; user-select: text; }
+.manga-overlay-dragging { cursor: grabbing; user-select: none; }
+
+.manga-translation-overlay:focus-visible,
+.manga-overlay-menu button:focus-visible { outline: 2px solid var(--manga-accent); outline-offset: 2px; }

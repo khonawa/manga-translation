@@ -9,6 +9,7 @@
     "test": "node --test test/*.test.js",
     "build:chrome": "node scripts/build-manifest.js chrome",
     "build:firefox": "node scripts/build-manifest.js firefox && web-ext build --source-dir . --artifacts-dir dist/firefox",
+    "build": "node scripts/build-dist.js",
     "dev:chrome": "node scripts/build-manifest.js chrome",
     "dev:firefox": "node scripts/build-manifest.js firefox && web-ext run"
   },
