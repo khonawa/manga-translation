@@ -1,8 +1,9 @@
 import { PROVIDERS, getProvider } from './src/shared/providers.js';
 import { MAX_API_PROFILES, normalizeApiProfiles } from './src/shared/routing.js';
+import { sessionGet, sessionSet, sessionRemove } from './src/shared/storage.js';
 
 const fields = {
-  sourceLanguage: document.getElementById('sourceLanguage'), targetLanguage: document.getElementById('targetLanguage'), separateStages: document.getElementById('separateStages'), persistOverlays: document.getElementById('persistOverlays'),
+  sourceLanguage: document.getElementById('sourceLanguage'), targetLanguage: document.getElementById('targetLanguage'), separateStages: document.getElementById('separateStages'), persistOverlays: document.getElementById('persistOverlays'), showFloatPanel: document.getElementById('showFloatPanel'),
   apiKeySessionOnly: document.getElementById('apiKeySessionOnly'), customInputRate: document.getElementById('customInputRate'), customOutputRate: document.getElementById('customOutputRate'),
   fontSizeMode: document.getElementById('fontSizeMode'), manualFontSize: document.getElementById('manualFontSize'), fontFamily: document.getElementById('fontFamily'), bubbleBgColor: document.getElementById('bubbleBgColor'), textColor: document.getElementById('textColor')
 };
@@ -54,7 +55,7 @@ function isConfiguredProfile(profile, index) {
 }
 
 async function initialize() {
-  const [stored, session] = await Promise.all([chrome.storage.local.get([...Object.keys(fields), 'provider', 'apiEndpoint', 'apiKey', 'apiModel', 'apiProfiles', 'onboardingComplete', 'usageHistory']), chrome.storage.session.get(['apiKey', 'apiProfiles'])]);
+  const [stored, session] = await Promise.all([chrome.storage.local.get([...Object.keys(fields), 'provider', 'apiEndpoint', 'apiKey', 'apiModel', 'apiProfiles', 'onboardingComplete', 'usageHistory']), sessionGet(['apiKey', 'apiProfiles'])]);
   const fallback = { provider: stored.provider, apiEndpoint: stored.apiEndpoint, apiKey: session.apiKey || stored.apiKey, apiModel: stored.apiModel };
   profiles = normalizeApiProfiles(session.apiProfiles || stored.apiProfiles, fallback).filter(isConfiguredProfile);
   renderProfiles();
@@ -123,9 +124,9 @@ async function testProfiles(candidates, button) {
 async function autoSave() {
   for (const profile of profiles.filter(item => item.enabled)) { try { const url = new URL(profile.apiEndpoint); if (!['http:', 'https:'].includes(url.protocol)) throw new Error(); } catch { status.textContent = `${profile.name}: enter a valid HTTP(S) endpoint`; return; } }
   const first = profiles.find(profile => profile.enabled) || profiles[0];
-  if (fields.apiKeySessionOnly.checked) { await chrome.storage.session.set({ apiProfiles: profiles, apiKey: first.apiKey }); await chrome.storage.local.remove(['apiProfiles', 'apiKey']); }
-  else { await chrome.storage.local.set({ apiProfiles: profiles, apiKey: first.apiKey }); await chrome.storage.session.remove(['apiProfiles', 'apiKey']); }
-  await chrome.storage.local.set({ provider: first.provider, apiEndpoint: first.apiEndpoint, apiModel: first.apiModel, sourceLanguage: fields.sourceLanguage.value, targetLanguage: fields.targetLanguage.value, separateStages: fields.separateStages.checked, apiKeySessionOnly: fields.apiKeySessionOnly.checked, customInputRate: Math.max(0, Number(fields.customInputRate.value) || 0), customOutputRate: Math.max(0, Number(fields.customOutputRate.value) || 0), persistOverlays: fields.persistOverlays.checked, fontSizeMode: fields.fontSizeMode.value, manualFontSize: clamp(fields.manualFontSize, 8, 36, 14), fontFamily: fields.fontFamily.value, bubbleBgColor: fields.bubbleBgColor.value, textColor: fields.textColor.value });
+  if (fields.apiKeySessionOnly.checked) { await sessionSet({ apiProfiles: profiles, apiKey: first.apiKey }); await chrome.storage.local.remove(['apiProfiles', 'apiKey']); }
+  else { await chrome.storage.local.set({ apiProfiles: profiles, apiKey: first.apiKey }); await sessionRemove(['apiProfiles', 'apiKey']); }
+  await chrome.storage.local.set({ provider: first.provider, apiEndpoint: first.apiEndpoint, apiModel: first.apiModel, sourceLanguage: fields.sourceLanguage.value, targetLanguage: fields.targetLanguage.value, separateStages: fields.separateStages.checked, apiKeySessionOnly: fields.apiKeySessionOnly.checked, customInputRate: Math.max(0, Number(fields.customInputRate.value) || 0), customOutputRate: Math.max(0, Number(fields.customOutputRate.value) || 0), persistOverlays: fields.persistOverlays.checked, showFloatPanel: fields.showFloatPanel.checked, fontSizeMode: fields.fontSizeMode.value, manualFontSize: clamp(fields.manualFontSize, 8, 36, 14), fontFamily: fields.fontFamily.value, bubbleBgColor: fields.bubbleBgColor.value, textColor: fields.textColor.value });
   status.textContent = 'Settings saved';
 }
 function updateVisibility() { document.getElementById('manualFontContainer').style.display = fields.fontSizeMode.value === 'manual' ? 'block' : 'none'; }

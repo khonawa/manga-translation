@@ -7,7 +7,7 @@ import globals from 'globals';
  */
 export default [
   {
-    ignores: ['node_modules/**', 'logo-concepts/**']
+    ignores: ['node_modules/**', 'node_modules - Copy/**', 'logo-concepts/**', 'browser-polyfill.js', 'dist/**']
   },
   {
     files: ['**/*.js'],
@@ -49,6 +49,12 @@ export default [
   },
   {
     files: ['test/**/*.js'],
+    languageOptions: {
+      globals: { ...globals.node }
+    }
+  },
+  {
+    files: ['scripts/**/*.js'],
     languageOptions: {
       globals: { ...globals.node }
     }

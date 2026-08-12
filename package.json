@@ -6,10 +6,16 @@
   "description": "Tooling for the Manga Screen Translator Chrome extension. The extension itself loads unbundled; this package only provides linting and tests.",
   "scripts": {
     "lint": "eslint .",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "build:chrome": "node scripts/build-manifest.js chrome",
+    "build:firefox": "node scripts/build-manifest.js firefox && web-ext build --source-dir . --artifacts-dir dist/firefox",
+    "dev:chrome": "node scripts/build-manifest.js chrome",
+    "dev:firefox": "node scripts/build-manifest.js firefox && web-ext run"
   },
   "devDependencies": {
     "eslint": "9.15.0",
-    "globals": "15.12.0"
+    "globals": "15.12.0",
+    "web-ext": "^10.6.0",
+    "webextension-polyfill": "^0.12.0"
   }
 }

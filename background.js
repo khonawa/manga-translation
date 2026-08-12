@@ -3,6 +3,7 @@ import { OCR_SCHEMA, COMBINED_SCHEMA, TRANSLATION_SCHEMA, openAiResponseFormat, 
 import { normalizeBubbles } from './src/shared/bubbles.js';
 import { parseJsonArray, normalizeTranslationArray, createStreamingRegionParser } from './src/shared/parse.js';
 import { normalizeApiProfiles, orderedEnabledProfiles, orderByLatency, updateLatencyEma } from './src/shared/routing.js';
+import { sessionGet } from './src/shared/storage.js';
 
 const activeRequests = new Map();
 const inflightTranslations = new Map();
@@ -39,6 +40,9 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 chrome.runtime.onStartup.addListener(async () => {
   chrome.alarms.create(CLEANUP_ALARM, { periodInMinutes: CLEANUP_INTERVAL_MINUTES });
   await cleanupStoredData();
+  const { autoTranslateEnabled } = await chrome.storage.local.get('autoTranslateEnabled');
+  chrome.action.setBadgeText({ text: autoTranslateEnabled ? 'AUTO' : '' });
+  if (autoTranslateEnabled) chrome.action.setBadgeBackgroundColor({ color: '#2e7d32' });
 });
 
 chrome.alarms.onAlarm.addListener(alarm => {
@@ -115,6 +119,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(data => sendResponse({ success: true, data }))
       .catch(error => sendResponse({ success: false, error: cleanError(error) }));
     return true;
+  }
+
+  if (request.action === 'SET_AUTO_TRANSLATE') {
+    const enabled = request.enabled === true;
+    chrome.action.setBadgeText({ text: enabled ? 'AUTO' : '' });
+    if (enabled) chrome.action.setBadgeBackgroundColor({ color: '#2e7d32' });
+    sendResponse({ success: true });
+    return false;
   }
 });
 
@@ -378,7 +390,7 @@ async function retryBubbleTranslation(source, requestId, tabId) {
 async function getApiConfig(override = {}) {
   const [stored, session] = await Promise.all([chrome.storage.local.get([
     'provider', 'apiEndpoint', 'apiKey', 'apiModel', 'apiProfiles', 'apiProfileCursor', 'sourceLanguage', 'targetLanguage', 'separateStages', 'customInputRate', 'customOutputRate', 'profileLatency'
-  ]), chrome.storage.session.get(['apiKey', 'apiProfiles'])]);
+  ]), sessionGet(['apiKey', 'apiProfiles'])]);
   const config = { ...stored, apiKey: session.apiKey || stored.apiKey, ...override };
   config.provider ||= DEFAULT_PROVIDER;
   config.targetLanguage ||= 'English';

@@ -46,42 +46,15 @@
       "description": "Translate Visible Screen"
     },
     "save-region-screenshot": {
-      "suggested_key": {
-        "default": "Alt+2",
-        "mac": "Alt+2"
-      },
+      "suggested_key": { "default": "Alt+2", "mac": "Alt+2" },
       "description": "Save Region Screenshot"
     },
     "save-page-screenshot": {
-      "suggested_key": {
-        "default": "Alt+3",
-        "mac": "Alt+3"
-      },
+      "suggested_key": { "default": "Alt+3", "mac": "Alt+3" },
       "description": "Save Visible Screen Screenshot"
     },
     "clear-overlays": {
       "description": "Clear Overlays"
     }
-  },
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "css": [
-        "src/shared/theme.css",
-        "styles.css"
-      ],
-      "js": [
-        "browser-polyfill.js",
-        "content.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
-    }
-  ]
+  }
 }

@@ -78,6 +78,52 @@ html.manga-capture-active body * { cursor: crosshair !important; }
 .manga-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10000001; display: flex; gap: 10px; align-items: center; max-width: min(460px, calc(100vw - 32px)); padding: 11px 12px 11px 14px; background: var(--manga-bg); color: var(--manga-text); border: 1px solid var(--manga-border); border-left: 3px solid var(--manga-accent); border-radius: var(--manga-radius); box-shadow: var(--manga-shadow); font: 14px/1.45 system-ui, sans-serif; }
 .manga-toast-error { border-left-color: var(--manga-danger); }
 .manga-toast-text { flex: 1; overflow-wrap: anywhere; }
+
+/* Floating touch control panel — sits below translation overlays (999990) so it
+   never covers translated text, but above page content. */
+#manga-float-panel {
+  position: fixed;
+  z-index: 999989;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--manga-bg);
+  border: 1px solid var(--manga-border-strong);
+  border-radius: 999px;
+  box-shadow: var(--manga-shadow);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#manga-float-panel .manga-fp-drag {
+  cursor: grab;
+  padding: 4px 6px;
+  color: var(--manga-text-subtle);
+  font-size: 13px;
+  line-height: 1;
+  touch-action: none;
+}
+#manga-float-panel .manga-fp-drag:active { cursor: grabbing; }
+#manga-float-panel button.manga-fp-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--manga-surface);
+  color: var(--manga-text);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+#manga-float-panel button.manga-fp-btn:hover { background: var(--manga-surface-raised); }
+#manga-float-panel button.manga-fp-btn.manga-fp-active {
+  background: var(--manga-success);
+  color: #fff;
+}
 .manga-toast-close { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--manga-radius-sm); background: transparent; color: var(--manga-text-muted); font-size: 17px; line-height: 1; cursor: pointer; }
 .manga-toast-close:hover { background: var(--manga-surface-raised); color: var(--manga-text); }
 

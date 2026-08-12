@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load saved preferences
   const config = await chrome.storage.local.get([
     'bubbleScaleMode', 'widthScale', 'heightScale', 'bubbleType', 'displayMode', 'readingOrder',
-    'clearOverlaysOnPageTurn'
+    'clearOverlaysOnPageTurn', 'autoTranslateEnabled'
   ]);
 
   // Restores a stored value only when it maps to a real <option>, so the UI can never
@@ -124,6 +124,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireAction(fullPageBtn, 'START_FULL_PAGE', { save: true });
   wireAction(saveRegionBtn, 'SAVE_REGION_SCREENSHOT');
   wireAction(savePageBtn, 'SAVE_PAGE_SCREENSHOT');
+
+  // Auto-translate toggle: persisted in storage (content scripts react via
+  // storage.onChanged) and mirrored to the toolbar badge via the service worker.
+  const autoTranslateBtn = document.getElementById('autoTranslateBtn');
+  function refreshAutoBtn(enabled) {
+    autoTranslateBtn.textContent = `Auto Translate: ${enabled ? 'ON' : 'OFF'}`;
+    autoTranslateBtn.classList.toggle('btn-accent', enabled);
+    autoTranslateBtn.classList.toggle('btn-secondary', !enabled);
+  }
+  refreshAutoBtn(config.autoTranslateEnabled === true);
+  autoTranslateBtn.addEventListener('click', async () => {
+    const enabled = !(await chrome.storage.local.get('autoTranslateEnabled')).autoTranslateEnabled;
+    await chrome.storage.local.set({ autoTranslateEnabled: enabled });
+    refreshAutoBtn(enabled);
+    chrome.runtime.sendMessage({ action: 'SET_AUTO_TRANSLATE', enabled }).catch(() => {});
+  });
 
   // Chrome silently drops a suggested key when it conflicts with an existing binding,
   // and users can remap freely, so read the real bindings instead of hardcoding labels.
