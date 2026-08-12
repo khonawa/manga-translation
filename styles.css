@@ -37,6 +37,12 @@ html.manga-capture-active body * { cursor: crosshair !important; }
 .manga-partial-overlay {
   opacity: 0.82;
   border-style: dashed;
+  animation: manga-bubble-in 0.15s ease-out;
+}
+
+@keyframes manga-bubble-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 0.82; transform: scale(1); }
 }
 
 .manga-text-content {

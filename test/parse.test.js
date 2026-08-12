@@ -86,3 +86,44 @@ test('streaming parser ignores non-region objects such as the wrapper', () => {
   assert.equal(emitted.length, 1);
   assert.equal(emitted[0].english, 'X');
 });
+
+test('streaming parser does not emit a region that has a box and source but no translation yet', () => {
+  const parser = createStreamingRegionParser();
+  // The object is still open after "source"; "english" has not been written yet.
+  const early = parser.push('{"regions":[{"box_2d":[0,0,5,5],"source":"x"');
+  assert.deepEqual(early, []);
+  const done = parser.push(',"english":"X"}]}');
+  assert.equal(done.length, 1);
+  assert.equal(done[0].english, 'X');
+});
+
+test('streaming parser handles an object split at the opening brace boundary', () => {
+  const parser = createStreamingRegionParser();
+  assert.deepEqual(parser.push('{"regions":[{'), []);
+  const emitted = parser.push('"box_2d":[0,0,5,5],"source":"x","english":"X"}]}');
+  assert.equal(emitted.length, 1);
+});
+
+test('streaming parser survives escaped quotes inside a string across chunks', () => {
+  const parser = createStreamingRegionParser();
+  assert.deepEqual(parser.push('{"regions":[{"box_2d":[0,0,5,5],"source":"He said \\"'), []);
+  const emitted = parser.push('stop\\"","english":"He said \\"stop\\""}]}');
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].source, 'He said "stop"');
+});
+
+test('streaming parser does not emit while box_2d is a partial array', () => {
+  const parser = createStreamingRegionParser();
+  // The object cannot close yet because the box array is mid-stream; nothing should emit.
+  assert.deepEqual(parser.push('{"regions":[{"box_2d":[0,0,5'), []);
+  const emitted = parser.push(',5],"source":"x","english":"X"}]}');
+  assert.equal(emitted.length, 1);
+});
+
+test('streaming parser finish() recovers complete regions from a truncated stream', () => {
+  const parser = createStreamingRegionParser();
+  parser.push('{"regions":[{"box_2d":[0,0,5,5],"source":"x","english":"X"},{"box_2d":[1,1,6,6],"sour');
+  const recovered = parser.finish();
+  assert.equal(recovered.length, 1);
+  assert.equal(recovered[0].english, 'X');
+});

@@ -12,6 +12,9 @@ const CACHE_SCHEMA_VERSION = 2;
 const PAGE_SESSION_TTL = 90 * 24 * 60 * 60 * 1000;
 const MANAGED_STORAGE_LIMIT = 20 * 1024 * 1024;
 const REQUEST_TIMEOUT = 90_000;
+// Streaming only: if the first SSE chunk has not arrived within this window the connection
+// is stalled, not merely slow, so bail out fast instead of waiting for the full timeout.
+const FIRST_BYTE_TIMEOUT = 15_000;
 const MAX_RETRY_ATTEMPTS = 4;
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const CLEANUP_ALARM = 'storageCleanup';
@@ -206,13 +209,15 @@ async function blobToDataUrl(blob) {
 async function runTranslationPipeline(base64Image, requestId, bypassCache = false, tabId, allowMalformedRetry = true, controller = new AbortController()) {
   validateImage(base64Image);
   const config = await getApiConfig();
+  // Key the cache on what actually changes the translation output: the image, the primary
+  // profile's model/endpoint, and the language/stage settings. Adding or reordering failover
+  // profiles must not bust every cached translation, so the full profile list is excluded.
+  const primary = config.apiProfiles.find(profile => profile.enabled) || {};
   const cacheKey = CACHE_PREFIX + await hashText(base64Image + JSON.stringify({
     schema: CACHE_SCHEMA_VERSION,
-    profiles: config.apiProfiles.filter(profile => profile.enabled).map(profile => ({
-      provider: profile.provider,
-      endpoint: profile.apiEndpoint,
-      model: profile.apiModel
-    })),
+    provider: primary.provider,
+    endpoint: primary.apiEndpoint,
+    model: primary.apiModel,
     sourceLanguage: config.sourceLanguage || 'Automatic',
     targetLanguage: config.targetLanguage,
     separateStages: config.separateStages
@@ -372,7 +377,7 @@ async function retryBubbleTranslation(source, requestId, tabId) {
 
 async function getApiConfig(override = {}) {
   const [stored, session] = await Promise.all([chrome.storage.local.get([
-    'provider', 'apiEndpoint', 'apiKey', 'apiModel', 'apiProfiles', 'apiProfileCursor', 'sourceLanguage', 'targetLanguage', 'separateStages', 'customInputRate', 'customOutputRate'
+    'provider', 'apiEndpoint', 'apiKey', 'apiModel', 'apiProfiles', 'apiProfileCursor', 'sourceLanguage', 'targetLanguage', 'separateStages', 'customInputRate', 'customOutputRate', 'profileLatency'
   ]), chrome.storage.session.get(['apiKey', 'apiProfiles'])]);
   const config = { ...stored, apiKey: session.apiKey || stored.apiKey, ...override };
   config.provider ||= DEFAULT_PROVIDER;
@@ -380,6 +385,8 @@ async function getApiConfig(override = {}) {
   // Combined OCR+translation is the default: one roundtrip instead of two. The separate
   // two-stage path stays available as an explicit opt-in for models that handle it better.
   config.separateStages = config.separateStages === true;
+  // Latency stats ride along on the config so callChatCompletions does not re-read storage.
+  config.profileLatency = stored.profileLatency || {};
 
   const preset = getProvider(config.provider);
   config.apiEndpoint = config.apiEndpoint?.trim() || preset.endpoint;
@@ -485,8 +492,7 @@ async function requestWithRetry(url, init, signal) {
 }
 
 async function callChatCompletions(config, signal, messages, structured, onPartial) {
-  const latencyStats = (await chrome.storage.local.get('profileLatency')).profileLatency || {};
-  const profiles = orderByLatency(orderedEnabledProfiles(config.apiProfiles, config.apiProfileCursor), latencyStats);
+  const profiles = orderByLatency(orderedEnabledProfiles(config.apiProfiles, config.apiProfileCursor), config.profileLatency);
   let lastError;
   for (const profile of profiles) {
     const routedConfig = { ...config, ...profile };
@@ -578,15 +584,21 @@ async function consumeOpenAiStream(response, onPartial) {
 
 /**
  * Minimal SSE line reader: yields the payload of each `data:` line. Works for both the
- * OpenAI-compatible and Anthropic event shapes.
+ * OpenAI-compatible and Anthropic event shapes. A stalled connection (no first chunk within
+ * FIRST_BYTE_TIMEOUT) is aborted rather than left to the much longer total REQUEST_TIMEOUT.
  */
 async function* readSseLines(response) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let firstByteTimer = setTimeout(() => reader.cancel(new Error('The provider sent no data within 15s.')), FIRST_BYTE_TIMEOUT);
   try {
     for (;;) {
       const { done, value } = await reader.read();
+      if (firstByteTimer) {
+        clearTimeout(firstByteTimer);
+        firstByteTimer = null;
+      }
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       let newline;
@@ -597,6 +609,7 @@ async function* readSseLines(response) {
       }
     }
   } finally {
+    if (firstByteTimer) clearTimeout(firstByteTimer);
     reader.cancel().catch(() => {});
   }
 }

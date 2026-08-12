@@ -138,14 +138,26 @@ export function createStreamingRegionParser() {
       }
       return fresh;
     },
-    /** Final full parse once the stream ends, for authoritative usage/caching. */
+    /**
+     * Final parse once the stream ends. Falls back to the regions recovered so far when the
+     * tail is truncated (e.g. the provider hit the token limit mid-array), so a partial
+     * stream still yields its complete bubbles instead of throwing.
+     */
     finish() {
-      return parseJsonArray(text);
+      try {
+        return parseJsonArray(text);
+      } catch {
+        return extractValidJsonObjects(text).filter(isCompleteRegion);
+      }
     }
   };
 }
 
 function isCompleteRegion(object) {
+  // Require the translated text as well as the box and source: in combined mode the model
+  // writes "english" after "source", and a stream cut between them would otherwise render a
+  // bubble with no translation. "translation" is accepted for the two-stage schema shape.
   return object && Array.isArray(object.box_2d) && object.box_2d.length === 4
-    && typeof object.source === 'string';
+    && typeof object.source === 'string'
+    && (typeof object.english === 'string' || typeof object.translation === 'string');
 }

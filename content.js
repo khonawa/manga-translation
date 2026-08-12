@@ -487,10 +487,6 @@
 
         const bubbles = response.data.bubbles;
 
-        // Drop the provisional streamed overlays; the authoritative set renders below.
-        activeStreamContext?.partialOverlays.forEach(overlay => overlay.remove());
-        activeStreamContext = null;
-
         if (Array.isArray(bubbles) && bubbles.length > 0) {
           removeOverlaysInRegion(selectionRect);
           const normalized = bubbles.map((bubble, index) => {
@@ -501,7 +497,7 @@
           normalized.forEach(bubble => { bubble.recordId = recordId; });
           const createdOverlays = renderDisplayMode(normalized, selectionRect, config);
           rememberCaptureRect(selectionRect);
-          
+
           // 2. Resolve overlaps & clamp to page boundaries
           resolveBubbleOverlaps(createdOverlays);
           refreshPageTurnBaseline();
@@ -516,6 +512,11 @@
         } else {
           showToast('No manga text was detected. Try a tighter region, or a model with vision support.', 'error', 8000);
         }
+
+        // Remove the provisional streamed overlays only after the final set is in the DOM,
+        // so there is no blank flash between the streamed bubbles and the authoritative ones.
+        activeStreamContext?.partialOverlays.forEach(overlay => overlay.remove());
+        activeStreamContext = null;
       } catch (e) {
         console.error("Translation rendering error:", e);
       } finally {
