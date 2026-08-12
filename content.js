@@ -13,6 +13,7 @@
   let pageGeneration = 0;
   let renderedSessionKey = getSessionKey();
   let activeCaptureRects = [];
+  let activeStreamContext = null;
 
   restorePageSession();
   initializePageTurnClearing();
@@ -191,8 +192,27 @@
       saveVisibleScreenshot();
     } else if (request.action === "TRANSLATION_PROGRESS" && request.requestId === activeRequestId) {
       updateStatus(request.message);
+    } else if (request.action === "TRANSLATION_PARTIAL" && request.requestId === activeRequestId) {
+      renderPartialBubble(request.region);
     }
   });
+
+  // Renders a single streamed bubble the moment the model finishes it. These overlays are
+  // provisional: the final TRANSLATE_IMAGE response re-renders authoritatively and clears them.
+  function renderPartialBubble(region) {
+    const context = activeStreamContext;
+    if (!context) return;
+    const bubble = normalizeBubble(region);
+    if (!bubble) return;
+    bubble.id = `${context.recordId}:partial:${context.partialCount}`;
+    bubble.recordId = context.recordId;
+    context.partialCount += 1;
+    const overlay = renderBubbleOverlay(bubble, context.selectionRect, context.config, context.partialCount);
+    if (overlay) {
+      overlay.classList.add('manga-partial-overlay');
+      context.partialOverlays.push(overlay);
+    }
+  }
 
   function enableSnipMode(purpose = 'translate') {
     cancelSnipMode();
@@ -440,7 +460,9 @@
     const requestId = crypto.randomUUID();
     const requestGeneration = pageGeneration;
     const requestUrl = location.href;
+    const recordId = crypto.randomUUID();
     activeRequestId = requestId;
+    activeStreamContext = { selectionRect, config, recordId, partialCount: 0, partialOverlays: [] };
     updateStatus('Finding text regions...');
     chrome.runtime.sendMessage({
       action: "TRANSLATE_IMAGE",
@@ -465,9 +487,12 @@
 
         const bubbles = response.data.bubbles;
 
+        // Drop the provisional streamed overlays; the authoritative set renders below.
+        activeStreamContext?.partialOverlays.forEach(overlay => overlay.remove());
+        activeStreamContext = null;
+
         if (Array.isArray(bubbles) && bubbles.length > 0) {
           removeOverlaysInRegion(selectionRect);
-          const recordId = crypto.randomUUID();
           const normalized = bubbles.map((bubble, index) => {
             const normalizedBubble = normalizeBubble(bubble);
             if (normalizedBubble) normalizedBubble.id = `${recordId}:${index}`;
@@ -494,6 +519,9 @@
       } catch (e) {
         console.error("Translation rendering error:", e);
       } finally {
+        // Any early return (error, empty result) still leaves provisional overlays behind.
+        activeStreamContext?.partialOverlays.forEach(overlay => overlay.remove());
+        activeStreamContext = null;
         if (activeRequestId === requestId) activeRequestId = null;
       }
     });

@@ -1,10 +1,11 @@
 import { getProvider, providerRates, DEFAULT_PROVIDER } from './src/shared/providers.js';
 import { OCR_SCHEMA, COMBINED_SCHEMA, TRANSLATION_SCHEMA, openAiResponseFormat, anthropicToolChoice } from './src/shared/schema.js';
 import { normalizeBubbles } from './src/shared/bubbles.js';
-import { parseJsonArray, normalizeTranslationArray } from './src/shared/parse.js';
-import { normalizeApiProfiles, orderedEnabledProfiles } from './src/shared/routing.js';
+import { parseJsonArray, normalizeTranslationArray, createStreamingRegionParser } from './src/shared/parse.js';
+import { normalizeApiProfiles, orderedEnabledProfiles, orderByLatency, updateLatencyEma } from './src/shared/routing.js';
 
 const activeRequests = new Map();
+const inflightTranslations = new Map();
 const CACHE_PREFIX = 'translationCache:';
 const CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
 const CACHE_SCHEMA_VERSION = 2;
@@ -15,8 +16,10 @@ const MAX_RETRY_ATTEMPTS = 4;
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const CLEANUP_ALARM = 'storageCleanup';
 const CLEANUP_INTERVAL_MINUTES = 360;
-const MAX_CAPTURE_DIMENSION = 1800;
-const CAPTURE_JPEG_QUALITY = 0.92;
+// 0.78 is plenty for OCR legibility and cuts the upload payload roughly in half versus 0.92.
+// 1200px still resolves manga dialogue cleanly while shrinking base64 size and image tokens.
+const MAX_CAPTURE_DIMENSION = 1200;
+const CAPTURE_JPEG_QUALITY = 0.78;
 let usageWriteQueue = Promise.resolve();
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
@@ -202,7 +205,6 @@ async function blobToDataUrl(blob) {
 
 async function runTranslationPipeline(base64Image, requestId, bypassCache = false, tabId, allowMalformedRetry = true, controller = new AbortController()) {
   validateImage(base64Image);
-  activeRequests.set(requestId, { controller, tabId });
   const config = await getApiConfig();
   const cacheKey = CACHE_PREFIX + await hashText(base64Image + JSON.stringify({
     schema: CACHE_SCHEMA_VERSION,
@@ -215,6 +217,28 @@ async function runTranslationPipeline(base64Image, requestId, bypassCache = fals
     targetLanguage: config.targetLanguage,
     separateStages: config.separateStages
   }));
+
+  // A rapid double-snip of the same region produces an identical cache key. Rather than
+  // paying for a second API call, the second requester attaches to the in-flight promise.
+  if (!bypassCache && inflightTranslations.has(cacheKey)) {
+    notifyProgress(tabId, requestId, 'ocr', 'This region is already being translated...');
+    return inflightTranslations.get(cacheKey);
+  }
+
+  const work = executeTranslation(base64Image, requestId, bypassCache, tabId, allowMalformedRetry, controller, config, cacheKey);
+  if (!bypassCache) {
+    inflightTranslations.set(cacheKey, work);
+    try {
+      return await work;
+    } finally {
+      if (inflightTranslations.get(cacheKey) === work) inflightTranslations.delete(cacheKey);
+    }
+  }
+  return work;
+}
+
+async function executeTranslation(base64Image, requestId, bypassCache, tabId, allowMalformedRetry, controller, config, cacheKey) {
+  activeRequests.set(requestId, { controller, tabId });
 
   if (!bypassCache) {
     const cached = (await chrome.storage.local.get(cacheKey))[cacheKey];
@@ -255,7 +279,12 @@ async function runTranslationPipeline(base64Image, requestId, bypassCache = fals
         }));
       }
     } else {
-      const result = await callVisionProvider(base64Image, config, controller.signal, buildCombinedPrompt(config), { name: 'manga_translation', schema: COMBINED_SCHEMA });
+      // Stream each region to the page as its JSON object closes, so the first translated
+      // bubble appears in well under a second instead of after the whole document returns.
+      const onPartial = tabId
+        ? region => notifyPartial(tabId, requestId, region)
+        : undefined;
+      const result = await callVisionProvider(base64Image, config, controller.signal, buildCombinedPrompt(config), { name: 'manga_translation', schema: COMBINED_SCHEMA }, onPartial);
       usage = mergeUsage(usage, result.usage);
       bubbles = normalizeBubbles(parseJsonArray(result.content), 'english');
     }
@@ -277,7 +306,7 @@ async function runTranslationPipeline(base64Image, requestId, bypassCache = fals
   } catch (error) {
     if (allowMalformedRetry && String(error?.message || '').includes('malformed JSON')) {
       notifyProgress(tabId, requestId, 'retry', 'Provider response was malformed. Retrying once...');
-      return runTranslationPipeline(base64Image, requestId, true, tabId, false, controller);
+      return executeTranslation(base64Image, requestId, true, tabId, false, controller, config, cacheKey);
     }
     throw error;
   } finally {
@@ -348,7 +377,9 @@ async function getApiConfig(override = {}) {
   const config = { ...stored, apiKey: session.apiKey || stored.apiKey, ...override };
   config.provider ||= DEFAULT_PROVIDER;
   config.targetLanguage ||= 'English';
-  config.separateStages = config.separateStages !== false;
+  // Combined OCR+translation is the default: one roundtrip instead of two. The separate
+  // two-stage path stays available as an explicit opt-in for models that handle it better.
+  config.separateStages = config.separateStages === true;
 
   const preset = getProvider(config.provider);
   config.apiEndpoint = config.apiEndpoint?.trim() || preset.endpoint;
@@ -378,21 +409,21 @@ async function getApiConfig(override = {}) {
   return config;
 }
 
-async function callVisionProvider(image, config, signal, prompt, structured) {
+async function callVisionProvider(image, config, signal, prompt, structured, onPartial) {
   return callChatCompletions(config, signal, [
     { role: 'system', content: 'You are a manga OCR and translation assistant. Return only the requested JSON.' },
     { role: 'user', content: [
       { type: 'text', text: prompt },
       { type: 'image_url', image_url: { url: image } }
     ] }
-  ], structured);
+  ], structured, onPartial);
 }
 
-async function callTextProvider(text, config, signal, prompt, structured) {
+async function callTextProvider(text, config, signal, prompt, structured, onPartial) {
   return callChatCompletions(config, signal, [
     { role: 'system', content: prompt },
     { role: 'user', content: text }
-  ], structured);
+  ], structured, onPartial);
 }
 
 /**
@@ -453,13 +484,16 @@ async function requestWithRetry(url, init, signal) {
   throw lastError ?? new Error('The request failed after several attempts.');
 }
 
-async function callChatCompletions(config, signal, messages, structured) {
-  const profiles = orderedEnabledProfiles(config.apiProfiles, config.apiProfileCursor);
+async function callChatCompletions(config, signal, messages, structured, onPartial) {
+  const latencyStats = (await chrome.storage.local.get('profileLatency')).profileLatency || {};
+  const profiles = orderByLatency(orderedEnabledProfiles(config.apiProfiles, config.apiProfileCursor), latencyStats);
   let lastError;
   for (const profile of profiles) {
     const routedConfig = { ...config, ...profile };
+    const startedAt = Date.now();
     try {
-      const result = await callSingleProvider(routedConfig, signal, messages, structured);
+      const result = await callSingleProvider(routedConfig, signal, messages, structured, onPartial);
+      recordProfileLatency(profile.id, startedAt);
       const enabledProfiles = config.apiProfiles.filter(candidate => candidate.enabled);
       const usedIndex = enabledProfiles.findIndex(candidate => candidate.id === profile.id);
       const nextCursor = (usedIndex + 1) % enabledProfiles.length;
@@ -475,8 +509,19 @@ async function callChatCompletions(config, signal, messages, structured) {
   throw new Error(`All enabled API profiles failed. Last error: ${lastError?.message || 'Unknown provider error'}`);
 }
 
-async function callSingleProvider(config, signal, messages, structured) {
-  if (config.provider === 'anthropic') return callAnthropic(config, signal, messages, structured);
+// Fire-and-forget: latency bookkeeping must never block or fail a translation.
+function recordProfileLatency(profileId, startedAt) {
+  const sampleMs = Date.now() - startedAt;
+  chrome.storage.local.get('profileLatency')
+    .then(({ profileLatency = {} }) => {
+      profileLatency[profileId] = { ema: updateLatencyEma(profileLatency[profileId]?.ema, sampleMs), updatedAt: Date.now() };
+      return chrome.storage.local.set({ profileLatency });
+    })
+    .catch(error => console.warn('Could not record profile latency:', error.message));
+}
+
+async function callSingleProvider(config, signal, messages, structured, onPartial) {
+  if (config.provider === 'anthropic') return callAnthropic(config, signal, messages, structured, onPartial);
   const headers = { 'Content-Type': 'application/json' };
   if (config.apiKey) {
     headers.Authorization = `Bearer ${config.apiKey}`;
@@ -491,8 +536,11 @@ async function callSingleProvider(config, signal, messages, structured) {
   const response = await requestWithRetry(config.apiEndpoint, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ model: config.apiModel, messages, max_tokens: resolveMaxTokens(messages), temperature: 0.2, ...extra })
+    body: JSON.stringify({ model: config.apiModel, messages, max_tokens: resolveMaxTokens(messages), temperature: 0.2, stream: Boolean(onPartial), ...extra })
   }, signal);
+
+  if (onPartial) return consumeOpenAiStream(response, onPartial);
+
   const data = await response.json();
   return {
     content: data.choices?.[0]?.message?.content ?? data,
@@ -504,6 +552,55 @@ async function callSingleProvider(config, signal, messages, structured) {
   };
 }
 
+/**
+ * Reads an OpenAI-compatible SSE stream, forwarding each completed region as it closes and
+ * returning the assembled document (plus token usage when the provider reports it).
+ */
+async function consumeOpenAiStream(response, onPartial) {
+  const parser = createStreamingRegionParser();
+  let usage = { promptTokens: 0, completionTokens: 0, requests: 1 };
+  for await (const data of readSseLines(response)) {
+    if (data === '[DONE]') break;
+    let event;
+    try { event = JSON.parse(data); } catch { continue; }
+    const delta = event.choices?.[0]?.delta?.content;
+    if (delta) parser.push(delta).forEach(region => onPartial(region));
+    if (event.usage) {
+      usage = {
+        promptTokens: event.usage.prompt_tokens || 0,
+        completionTokens: event.usage.completion_tokens || 0,
+        requests: 1
+      };
+    }
+  }
+  return { content: parser.finish(), usage };
+}
+
+/**
+ * Minimal SSE line reader: yields the payload of each `data:` line. Works for both the
+ * OpenAI-compatible and Anthropic event shapes.
+ */
+async function* readSseLines(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (line.startsWith('data:')) yield line.slice(5).trim();
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+}
+
 function isGoogleAiStudioEndpoint(endpoint) {
   try {
     return new URL(endpoint).hostname === 'generativelanguage.googleapis.com';
@@ -512,7 +609,7 @@ function isGoogleAiStudioEndpoint(endpoint) {
   }
 }
 
-async function callAnthropic(config, signal, messages, structured) {
+async function callAnthropic(config, signal, messages, structured, onPartial) {
   const system = messages.find(message => message.role === 'system')?.content || '';
   const userContent = messages.find(message => message.role === 'user')?.content;
   const blocks = Array.isArray(userContent)
@@ -529,8 +626,11 @@ async function callAnthropic(config, signal, messages, structured) {
   const response = await requestWithRetry(config.apiEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': config.apiKey || '', 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: config.apiModel, system, messages: [{ role: 'user', content: blocks }], max_tokens: resolveMaxTokens(messages), temperature: 0.2, ...extra })
+    body: JSON.stringify({ model: config.apiModel, system, messages: [{ role: 'user', content: blocks }], max_tokens: resolveMaxTokens(messages), temperature: 0.2, stream: Boolean(onPartial), ...extra })
   }, signal);
+
+  if (onPartial) return consumeAnthropicStream(response, onPartial);
+
   const data = await response.json();
 
   // A forced tool call returns parsed input; fall back to text for unstructured calls.
@@ -541,6 +641,28 @@ async function callAnthropic(config, signal, messages, structured) {
     content,
     usage: { promptTokens: data.usage?.input_tokens || 0, completionTokens: data.usage?.output_tokens || 0, requests: 1 }
   };
+}
+
+/**
+ * Anthropic streams a forced tool call as `input_json_delta` fragments. Accumulating those
+ * and feeding the region parser yields each bubble as its JSON object closes.
+ */
+async function consumeAnthropicStream(response, onPartial) {
+  const parser = createStreamingRegionParser();
+  const usage = { promptTokens: 0, completionTokens: 0, requests: 1 };
+  for await (const data of readSseLines(response)) {
+    let event;
+    try { event = JSON.parse(data); } catch { continue; }
+    if (event.type === 'content_block_delta') {
+      const fragment = event.delta?.partial_json ?? event.delta?.text;
+      if (fragment) parser.push(fragment).forEach(region => onPartial(region));
+    } else if (event.type === 'message_delta' && event.usage) {
+      usage.completionTokens = event.usage.output_tokens || usage.completionTokens;
+    } else if (event.type === 'message_start' && event.message?.usage) {
+      usage.promptTokens = event.message.usage.input_tokens || 0;
+    }
+  }
+  return { content: parser.finish(), usage };
 }
 
 function buildOcrPrompt(config) {
@@ -583,6 +705,11 @@ async function recordUsage(usage, imageBytes, provider, model) {
 function notifyProgress(tabId, requestId, stage, message) {
   if (!tabId) return;
   chrome.tabs.sendMessage(tabId, { action: 'TRANSLATION_PROGRESS', requestId, stage, message }).catch(() => {});
+}
+
+function notifyPartial(tabId, requestId, region) {
+  if (!tabId) return;
+  chrome.tabs.sendMessage(tabId, { action: 'TRANSLATION_PARTIAL', requestId, region }).catch(() => {});
 }
 
 function mergeUsage(total, next = {}) {

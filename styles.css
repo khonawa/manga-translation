@@ -33,12 +33,17 @@ html.manga-capture-active body * { cursor: crosshair !important; }
   white-space: normal;
 }
 
+/* Provisional bubble shown while the rest of the translation is still streaming in. */
+.manga-partial-overlay {
+  opacity: 0.82;
+  border-style: dashed;
+}
+
 .manga-text-content {
   display: block;
   width: 100%;
   max-width: 100%;
-  pointer-events: none;
-  writing-mode: horizontal-tb !important;
+  pointer-events: none;  writing-mode: horizontal-tb !important;
   text-orientation: mixed !important;
   white-space: normal !important;
   word-break: normal !important;

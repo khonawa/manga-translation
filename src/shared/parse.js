@@ -88,3 +88,64 @@ export function normalizeTranslationArray(content) {
     parseJsonArray(content).map(item => [Number(item.index), String(item.translation ?? '').trim()])
   );
 }
+
+/**
+ * Incremental extractor for streaming responses. As SSE chunks accumulate into a partial
+ * JSON document, this returns the region objects that have closed since the last call, so
+ * the page can render each translated bubble the moment the model finishes writing it.
+ *
+ * Regions sit inside a wrapper ({"regions":[...]}), so they never reach depth 0; this
+ * scanner captures every balanced object at any depth and keeps the ones shaped like a
+ * region. `emittedUpto` tracks the end index of the last object reported so repeats are
+ * not emitted as more chunks arrive.
+ */
+export function createStreamingRegionParser() {
+  let text = '';
+  let emittedUpto = 0;
+  return {
+    /** Feed a new chunk; returns the newly completed region objects. */
+    push(chunk) {
+      text += chunk;
+      const fresh = [];
+      const stack = [];
+      let inString = false;
+      let escaped = false;
+      for (let index = 0; index < text.length; index += 1) {
+        const character = text[index];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (character === '\\') escaped = true;
+          else if (character === '"') inString = false;
+          continue;
+        }
+        if (character === '"') inString = true;
+        else if (character === '{') stack.push(index);
+        else if (character === '}' && stack.length) {
+          const start = stack.pop();
+          const end = index + 1;
+          // Only the innermost objects can be regions; the wrapper closes last and is
+          // filtered out by isCompleteRegion. emittedUpto stops re-reporting on later pushes.
+          if (end > emittedUpto) {
+            try {
+              const parsed = JSON.parse(text.slice(start, end));
+              if (isCompleteRegion(parsed)) {
+                fresh.push(parsed);
+                emittedUpto = end;
+              }
+            } catch { /* incomplete or non-region object */ }
+          }
+        }
+      }
+      return fresh;
+    },
+    /** Final full parse once the stream ends, for authoritative usage/caching. */
+    finish() {
+      return parseJsonArray(text);
+    }
+  };
+}
+
+function isCompleteRegion(object) {
+  return object && Array.isArray(object.box_2d) && object.box_2d.length === 4
+    && typeof object.source === 'string';
+}
