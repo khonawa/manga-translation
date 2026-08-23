@@ -3,7 +3,7 @@ import { MAX_API_PROFILES, normalizeApiProfiles } from './src/shared/routing.js'
 import { sessionGet, sessionSet, sessionRemove } from './src/shared/storage.js';
 
 const fields = {
-  sourceLanguage: document.getElementById('sourceLanguage'), targetLanguage: document.getElementById('targetLanguage'), separateStages: document.getElementById('separateStages'), persistOverlays: document.getElementById('persistOverlays'), showFloatPanel: document.getElementById('showFloatPanel'),
+  sourceLanguage: document.getElementById('sourceLanguage'), targetLanguage: document.getElementById('targetLanguage'), separateStages: document.getElementById('separateStages'), persistOverlays: document.getElementById('persistOverlays'),
   apiKeySessionOnly: document.getElementById('apiKeySessionOnly'), customInputRate: document.getElementById('customInputRate'), customOutputRate: document.getElementById('customOutputRate'),
   fontSizeMode: document.getElementById('fontSizeMode'), manualFontSize: document.getElementById('manualFontSize'), fontFamily: document.getElementById('fontFamily'), bubbleBgColor: document.getElementById('bubbleBgColor'), textColor: document.getElementById('textColor')
 };
@@ -77,17 +77,32 @@ document.getElementById('removeProfile').addEventListener('click', () => {
   renderProfiles();
   autoSave();
 });
+function profileFromEvent(event) {
+  const wrapper = event.target.closest('.profile');
+  return wrapper ? { wrapper, profile: profiles[Number(wrapper.dataset.index)] } : null;
+}
 profilesContainer.addEventListener('change', event => {
-  const wrapper = event.target.closest('.profile'); if (!wrapper) return;
-  const profile = profiles[Number(wrapper.dataset.index)]; const key = event.target.dataset.field;
+  const context = profileFromEvent(event); if (!context) return;
+  const { profile } = context; const key = event.target.dataset.field;
   if (key) profile[key] = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
-  if (key === 'provider') { const preset = getProvider(profile.provider); profile.apiEndpoint = preset.endpoint; profile.apiModel = preset.model; renderProfiles(); }
+  if (key === 'provider') {
+    const preset = getProvider(profile.provider);
+    profile.apiEndpoint = preset.endpoint;
+    profile.apiModel = preset.model;
+    renderProfiles();
+  }
   autoSave();
 });
-profilesContainer.addEventListener('input', event => { const wrapper = event.target.closest('.profile'); const key = event.target.dataset.field; if (!wrapper || !key) return; profiles[Number(wrapper.dataset.index)][key] = event.target.value; scheduleSave(); });
+profilesContainer.addEventListener('input', event => {
+  const context = profileFromEvent(event); const key = event.target.dataset.field;
+  if (!context || !key) return;
+  context.profile[key] = event.target.value;
+  scheduleSave();
+});
 profilesContainer.addEventListener('click', async event => {
   const action = event.target.dataset.action; if (!action) return;
-  const wrapper = event.target.closest('.profile'); const profile = profiles[Number(wrapper.dataset.index)];
+  const context = profileFromEvent(event); if (!context) return;
+  const { wrapper, profile } = context;
   if (action === 'toggle-key') { const key = wrapper.querySelector('[data-field="apiKey"]'); key.type = key.type === 'password' ? 'text' : 'password'; event.target.textContent = key.type === 'password' ? 'Show key' : 'Hide key'; }
   if (action === 'clear-key') { profile.apiKey = ''; wrapper.querySelector('[data-field="apiKey"]').value = ''; autoSave(); }
   if (action === 'test') await testProfiles([profile], event.target);
@@ -107,6 +122,7 @@ async function testProfiles(candidates, button) {
   button.disabled = true;
   status.textContent = `Testing ${candidates.length} API profile${candidates.length === 1 ? '' : 's'}...`;
   try {
+    await ensureProfilePermissions(candidates);
     await autoSave();
     for (const profile of candidates) {
       const response = await chrome.runtime.sendMessage({ action: 'TEST_CONNECTION', config: profile });
@@ -121,12 +137,22 @@ async function testProfiles(candidates, button) {
     button.disabled = false;
   }
 }
+function endpointPermission(endpoint) {
+  const url = new URL(endpoint);
+  return `${url.protocol}//${url.host}/*`;
+}
+async function ensureProfilePermissions(candidates) {
+  const origins = [...new Set(candidates.filter(profile => profile.enabled !== false).map(profile => endpointPermission(profile.apiEndpoint)))];
+  if (!origins.length || await chrome.permissions.contains({ origins })) return;
+  const granted = await chrome.permissions.request({ origins });
+  if (!granted) throw new Error('Provider access was not granted. Allow access to the configured API endpoint and try again.');
+}
 async function autoSave() {
   for (const profile of profiles.filter(item => item.enabled)) { try { const url = new URL(profile.apiEndpoint); if (!['http:', 'https:'].includes(url.protocol)) throw new Error(); } catch { status.textContent = `${profile.name}: enter a valid HTTP(S) endpoint`; return; } }
   const first = profiles.find(profile => profile.enabled) || profiles[0];
   if (fields.apiKeySessionOnly.checked) { await sessionSet({ apiProfiles: profiles, apiKey: first.apiKey }); await chrome.storage.local.remove(['apiProfiles', 'apiKey']); }
   else { await chrome.storage.local.set({ apiProfiles: profiles, apiKey: first.apiKey }); await sessionRemove(['apiProfiles', 'apiKey']); }
-  await chrome.storage.local.set({ provider: first.provider, apiEndpoint: first.apiEndpoint, apiModel: first.apiModel, sourceLanguage: fields.sourceLanguage.value, targetLanguage: fields.targetLanguage.value, separateStages: fields.separateStages.checked, apiKeySessionOnly: fields.apiKeySessionOnly.checked, customInputRate: Math.max(0, Number(fields.customInputRate.value) || 0), customOutputRate: Math.max(0, Number(fields.customOutputRate.value) || 0), persistOverlays: fields.persistOverlays.checked, showFloatPanel: fields.showFloatPanel.checked, fontSizeMode: fields.fontSizeMode.value, manualFontSize: clamp(fields.manualFontSize, 8, 36, 14), fontFamily: fields.fontFamily.value, bubbleBgColor: fields.bubbleBgColor.value, textColor: fields.textColor.value });
+  await chrome.storage.local.set({ provider: first.provider, apiEndpoint: first.apiEndpoint, apiModel: first.apiModel, sourceLanguage: fields.sourceLanguage.value, targetLanguage: fields.targetLanguage.value, separateStages: fields.separateStages.checked, apiKeySessionOnly: fields.apiKeySessionOnly.checked, customInputRate: Math.max(0, Number(fields.customInputRate.value) || 0), customOutputRate: Math.max(0, Number(fields.customOutputRate.value) || 0), persistOverlays: fields.persistOverlays.checked, fontSizeMode: fields.fontSizeMode.value, manualFontSize: clamp(fields.manualFontSize, 8, 36, 14), fontFamily: fields.fontFamily.value, bubbleBgColor: fields.bubbleBgColor.value, textColor: fields.textColor.value });
   status.textContent = 'Settings saved';
 }
 function updateVisibility() { document.getElementById('manualFontContainer').style.display = fields.fontSizeMode.value === 'manual' ? 'block' : 'none'; }

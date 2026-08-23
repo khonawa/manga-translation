@@ -48,7 +48,7 @@ A cross-browser extension (Chrome & Firefox, Manifest V3) that translates manga,
 3. Click **Test All Enabled APIs** to verify the connection.
 4. Optionally add more API profiles for rotation/failover, set source/target languages, and customize appearance.
 
-API keys are stored in extension storage on your device. Enable **"Keep key only until Chrome closes"** to use session-only storage instead.
+API keys are stored as plaintext in browser-managed extension storage on your device. Enable **"Keep key only until Chrome closes"** to use session-only storage and limit persistence; this is not encryption and does not protect a key from a compromised browser profile. When you test an API profile, the browser asks for network access only to that profile's configured endpoint.
 
 ## Usage
 
@@ -67,7 +67,7 @@ Right-click a translated bubble (or focus it and press `Enter`) for actions, `F2
 ### Auto-translate & floating panel
 
 - **Auto Translate** (popup toggle) watches for page changes and re-runs a full-page translation automatically. The toolbar badge shows `AUTO` while it's on.
-- **Floating panel** (Settings → "Show floating control panel on pages") adds a small draggable pill to the page with buttons for translate, auto-translate toggle, and dismiss. Its position is remembered. Useful on tablets and touchscreens.
+- **Floating panel** (popup toggle, below Auto Translate) adds a small draggable pill to the page with buttons for translate, auto-translate toggle, and dismiss. Its position is remembered. Useful on tablets and touchscreens.
 
 ## How it works
 
@@ -146,5 +146,7 @@ Two files are generated — never edit them directly: the root `content.js` (edi
 ## Privacy & cost notes
 
 - The extension only calls an AI provider when you explicitly translate something. There is no background/speculative API usage.
+- Provider host access is requested when you test a configured endpoint instead of being granted for every website at installation time.
 - Translations are cached locally (30-day TTL, ~20 MB cap) and never leave your device except as the image payload sent to your configured provider.
 - Each translation consumes provider tokens; usage and estimated cost are shown in Settings.
+- Session-only API keys reduce how long credentials persist, but extension storage is not an encrypted secret vault.

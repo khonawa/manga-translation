@@ -1,0 +1,131 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Review: run tests",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"test"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Review: run lint",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"lint"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Phase 1: inflight tests",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"--test",
+				"test/inflight.test.js"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Phase 2: request policy tests",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"--test",
+				"test/request-policy.test.js"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Phase 3: content DOM tests",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"--test",
+				"test/content-dom.test.js"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Phase 5: lint permissions",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"lint"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Phases 5-6: lint settings",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"lint"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Final: full tests",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"test"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Final: lint",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"lint"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "test"
+		},
+		{
+			"label": "Final: production build",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

@@ -4,6 +4,8 @@ import { normalizeBubbles } from './src/shared/bubbles.js';
 import { parseJsonArray, normalizeTranslationArray, createStreamingRegionParser } from './src/shared/parse.js';
 import { normalizeApiProfiles, orderedEnabledProfiles, orderByLatency, updateLatencyEma } from './src/shared/routing.js';
 import { sessionGet } from './src/shared/storage.js';
+import { addInflightSubscriber, createInflightEntry, listInflightSubscribers, removeInflightSubscriber } from './src/shared/inflight.js';
+import { resolveMaxTokens, retryDelay } from './src/shared/request-policy.js';
 
 const activeRequests = new Map();
 const inflightTranslations = new Map();
@@ -106,7 +108,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const entry = activeRequests.get(request.requestId);
     // Only the tab that started a request may cancel it.
     if (entry && (entry.tabId === undefined || entry.tabId === sender.tab?.id)) {
-      entry.controller.abort();
+      if (entry.inflight) removeInflightSubscriber(entry.inflight, request.requestId);
+      else entry.controller.abort();
+      activeRequests.delete(request.requestId);
       sendResponse({ success: true });
     } else {
       sendResponse({ success: false, error: 'No matching translation to cancel.' });
@@ -231,7 +235,7 @@ async function blobToDataUrl(blob) {
   return `data:${blob.type};base64,${btoa(binary)}`;
 }
 
-async function runTranslationPipeline(base64Image, requestId, bypassCache = false, tabId, allowMalformedRetry = true, controller = new AbortController()) {
+async function runTranslationPipeline(base64Image, requestId, bypassCache = false, tabId, allowMalformedRetry = true) {
   validateImage(base64Image);
   const config = await getApiConfig();
   // Key the cache on what actually changes the translation output: the image, the primary
@@ -251,25 +255,43 @@ async function runTranslationPipeline(base64Image, requestId, bypassCache = fals
   // A rapid double-snip of the same region produces an identical cache key. Rather than
   // paying for a second API call, the second requester attaches to the in-flight promise.
   if (!bypassCache && inflightTranslations.has(cacheKey)) {
+    const entry = inflightTranslations.get(cacheKey);
+    addInflightSubscriber(entry, requestId, tabId);
+    activeRequests.set(requestId, { inflight: entry, tabId });
     notifyProgress(tabId, requestId, 'ocr', 'This region is already being translated...');
-    return inflightTranslations.get(cacheKey);
+    try {
+      return await entry.promise;
+    } finally {
+      entry.subscribers.delete(requestId);
+      activeRequests.delete(requestId);
+    }
   }
 
-  const work = executeTranslation(base64Image, requestId, bypassCache, tabId, allowMalformedRetry, controller, config, cacheKey);
+  const entry = createInflightEntry();
+  addInflightSubscriber(entry, requestId, tabId);
+  activeRequests.set(requestId, { inflight: entry, tabId });
+  const work = executeTranslation(base64Image, bypassCache, allowMalformedRetry, entry, config, cacheKey);
+  entry.promise = work;
   if (!bypassCache) {
-    inflightTranslations.set(cacheKey, work);
+    inflightTranslations.set(cacheKey, entry);
     try {
       return await work;
     } finally {
-      if (inflightTranslations.get(cacheKey) === work) inflightTranslations.delete(cacheKey);
+      entry.subscribers.delete(requestId);
+      activeRequests.delete(requestId);
+      if (inflightTranslations.get(cacheKey) === entry) inflightTranslations.delete(cacheKey);
     }
   }
-  return work;
+  try {
+    return await work;
+  } finally {
+    entry.subscribers.delete(requestId);
+    activeRequests.delete(requestId);
+  }
 }
 
-async function executeTranslation(base64Image, requestId, bypassCache, tabId, allowMalformedRetry, controller, config, cacheKey) {
-  activeRequests.set(requestId, { controller, tabId });
-
+async function executeTranslation(base64Image, bypassCache, allowMalformedRetry, entry, config, cacheKey) {
+  const { controller } = entry;
   if (!bypassCache) {
     const cached = (await chrome.storage.local.get(cacheKey))[cacheKey];
     if (cached && Date.now() - cached.createdAt < CACHE_TTL) {
@@ -279,7 +301,7 @@ async function executeTranslation(base64Image, requestId, bypassCache, tabId, al
   }
 
   try {
-    notifyProgress(tabId, requestId, 'ocr', 'Finding text regions...');
+    notifyInflightProgress(entry, 'ocr', 'Finding text regions...');
     let bubbles;
     let usage = { promptTokens: 0, completionTokens: 0, requests: 0 };
 
@@ -288,12 +310,12 @@ async function executeTranslation(base64Image, requestId, bypassCache, tabId, al
       const ocrBubbles = normalizeBubbles(parseJsonArray(ocrResult.content), 'source');
       usage = mergeUsage(usage, ocrResult.usage);
       if (!ocrBubbles.length) {
-        notifyProgress(tabId, requestId, 'translate', 'Retrying with combined vision translation...');
+        notifyInflightProgress(entry, 'translate', 'Retrying with combined vision translation...');
         const fallbackResult = await callVisionProvider(base64Image, config, controller.signal, buildCombinedPrompt(config), { name: 'manga_translation', schema: COMBINED_SCHEMA });
         usage = mergeUsage(usage, fallbackResult.usage);
         bubbles = normalizeBubbles(parseJsonArray(fallbackResult.content), 'english');
       } else {
-        notifyProgress(tabId, requestId, 'translate', `Translating ${ocrBubbles.length} regions...`);
+        notifyInflightProgress(entry, 'translate', `Translating ${ocrBubbles.length} regions...`);
         const translationResult = await callTextProvider(
           JSON.stringify(ocrBubbles.map(({ source }, index) => ({ index, source }))),
           config,
@@ -311,9 +333,7 @@ async function executeTranslation(base64Image, requestId, bypassCache, tabId, al
     } else {
       // Stream each region to the page as its JSON object closes, so the first translated
       // bubble appears in well under a second instead of after the whole document returns.
-      const onPartial = tabId
-        ? region => notifyPartial(tabId, requestId, region)
-        : undefined;
+      const onPartial = region => notifyInflightPartial(entry, region);
       const result = await callVisionProvider(base64Image, config, controller.signal, buildCombinedPrompt(config), { name: 'manga_translation', schema: COMBINED_SCHEMA }, onPartial);
       usage = mergeUsage(usage, result.usage);
       bubbles = normalizeBubbles(parseJsonArray(result.content), 'english');
@@ -331,16 +351,14 @@ async function executeTranslation(base64Image, requestId, bypassCache, tabId, al
     } catch (error) {
       console.warn('Could not record usage:', error.message);
     }
-    notifyProgress(tabId, requestId, 'done', `Ready: ${bubbles.length} translations`);
+    notifyInflightProgress(entry, 'done', `Ready: ${bubbles.length} translations`);
     return output;
   } catch (error) {
     if (allowMalformedRetry && String(error?.message || '').includes('malformed JSON')) {
-      notifyProgress(tabId, requestId, 'retry', 'Provider response was malformed. Retrying once...');
-      return executeTranslation(base64Image, requestId, true, tabId, false, controller, config, cacheKey);
+      notifyInflightProgress(entry, 'retry', 'Provider response was malformed. Retrying once...');
+      return executeTranslation(base64Image, true, false, entry, config, cacheKey);
     }
     throw error;
-  } finally {
-    if (activeRequests.get(requestId)?.controller === controller) activeRequests.delete(requestId);
   }
 }
 
@@ -456,39 +474,6 @@ async function callTextProvider(text, config, signal, prompt, structured, onPart
     { role: 'system', content: prompt },
     { role: 'user', content: text }
   ], structured, onPartial);
-}
-
-/**
- * Estimates an output token budget from the prompt size. A dense double-page spread can
- * easily exceed a fixed 2048, and truncation is what forces the malformed-JSON path.
- */
-function resolveMaxTokens(messages) {
-  // Inspect the structure directly instead of JSON.stringify-ing the whole payload:
-  // the base64 image can be several MB, and stringify ran three times per call.
-  let hasImage = false;
-  let textCharacters = 0;
-  for (const message of messages) {
-    const content = message?.content;
-    if (typeof content === 'string') { textCharacters += content.length; continue; }
-    if (!Array.isArray(content)) continue;
-    for (const part of content) {
-      if (part?.type === 'image_url' || part?.type === 'image') hasImage = true;
-      else if (typeof part?.text === 'string') textCharacters += part.text.length;
-    }
-  }
-  const estimate = hasImage ? 4096 : Math.ceil(textCharacters / 2) + 1024;
-  return Math.max(2048, Math.min(8192, estimate));
-}
-
-function retryDelay(attempt, response) {
-  const header = response?.headers.get('retry-after');
-  if (header) {
-    const seconds = Number(header);
-    const milliseconds = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
-    if (Number.isFinite(milliseconds) && milliseconds > 0) return Math.min(milliseconds, 30_000);
-  }
-  const backoff = Math.min(1000 * 2 ** attempt, 16_000);
-  return backoff + Math.random() * 400; // jitter avoids synchronised retries
 }
 
 const wait = (milliseconds, signal) => new Promise((resolve, reject) => {
@@ -759,6 +744,14 @@ function notifyProgress(tabId, requestId, stage, message) {
 function notifyPartial(tabId, requestId, region) {
   if (!tabId) return;
   chrome.tabs.sendMessage(tabId, { action: 'TRANSLATION_PARTIAL', requestId, region }).catch(() => {});
+}
+
+function notifyInflightProgress(entry, stage, message) {
+  listInflightSubscribers(entry).forEach(({ tabId, requestId }) => notifyProgress(tabId, requestId, stage, message));
+}
+
+function notifyInflightPartial(entry, region) {
+  listInflightSubscribers(entry).forEach(({ tabId, requestId }) => notifyPartial(tabId, requestId, region));
 }
 
 function mergeUsage(total, next = {}) {
