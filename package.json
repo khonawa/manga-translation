@@ -3,10 +3,11 @@
   "version": "1.6.0",
   "private": true,
   "type": "module",
-  "description": "Tooling for the Manga Screen Translator Chrome extension. The extension itself loads unbundled; this package only provides linting and tests.",
+  "description": "Tooling for the Manga Screen Translator extension. The content script is bundled with esbuild; this package provides linting, tests, and build scripts.",
   "scripts": {
     "lint": "eslint .",
     "test": "node --test test/*.test.js",
+    "build:content": "node scripts/bundle-content.js",
     "build:chrome": "node scripts/build-manifest.js chrome",
     "build:firefox": "node scripts/build-manifest.js firefox && web-ext build --source-dir . --artifacts-dir dist/firefox",
     "build": "node scripts/build-dist.js",
@@ -14,6 +15,7 @@
     "dev:firefox": "node scripts/build-manifest.js firefox && web-ext run"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "eslint": "9.15.0",
     "globals": "15.12.0",
     "web-ext": "^10.6.0",

@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load saved preferences
   const config = await chrome.storage.local.get([
     'bubbleScaleMode', 'widthScale', 'heightScale', 'bubbleType', 'displayMode', 'readingOrder',
-    'clearOverlaysOnPageTurn', 'autoTranslateEnabled'
+    'clearOverlaysOnPageTurn', 'autoTranslateEnabled', 'showFloatPanel'
   ]);
 
   // Restores a stored value only when it maps to a real <option>, so the UI can never
@@ -139,6 +139,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     await chrome.storage.local.set({ autoTranslateEnabled: enabled });
     refreshAutoBtn(enabled);
     chrome.runtime.sendMessage({ action: 'SET_AUTO_TRANSLATE', enabled }).catch(() => {});
+  });
+
+  // Floating-panel toggle: same storage key the options page uses. The content script
+  // reacts via storage.onChanged, so no message needs to be sent.
+  const floatPanelBtn = document.getElementById('floatPanelBtn');
+  function refreshFloatBtn(enabled) {
+    floatPanelBtn.textContent = `Floating Panel: ${enabled ? 'ON' : 'OFF'}`;
+    floatPanelBtn.classList.toggle('btn-accent', enabled);
+    floatPanelBtn.classList.toggle('btn-secondary', !enabled);
+  }
+  refreshFloatBtn(config.showFloatPanel === true);
+  floatPanelBtn.addEventListener('click', async () => {
+    const enabled = !(await chrome.storage.local.get('showFloatPanel')).showFloatPanel;
+    await chrome.storage.local.set({ showFloatPanel: enabled });
+    refreshFloatBtn(enabled);
   });
 
   // Chrome silently drops a suggested key when it conflicts with an existing binding,

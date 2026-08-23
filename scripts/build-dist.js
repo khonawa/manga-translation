@@ -17,6 +17,9 @@ const RUNTIME_FILES = [
   'styles.css'
 ];
 
+// Bundle the modular content script first so dist/ picks up the bundled content.js.
+execFileSync(process.execPath, ['scripts/bundle-content.js'], { stdio: 'inherit' });
+
 for (const target of ['chrome', 'firefox']) {
   // Generate the manifest for this target, then copy it into the dist folder.
   execFileSync(process.execPath, ['scripts/build-manifest.js', target], { stdio: 'inherit' });

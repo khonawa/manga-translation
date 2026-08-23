@@ -463,9 +463,20 @@ async function callTextProvider(text, config, signal, prompt, structured, onPart
  * easily exceed a fixed 2048, and truncation is what forces the malformed-JSON path.
  */
 function resolveMaxTokens(messages) {
-  const characters = JSON.stringify(messages).length;
-  const hasImage = JSON.stringify(messages).includes('"image_url"') || JSON.stringify(messages).includes('"type":"image"');
-  const estimate = hasImage ? 4096 : Math.ceil(characters / 2) + 1024;
+  // Inspect the structure directly instead of JSON.stringify-ing the whole payload:
+  // the base64 image can be several MB, and stringify ran three times per call.
+  let hasImage = false;
+  let textCharacters = 0;
+  for (const message of messages) {
+    const content = message?.content;
+    if (typeof content === 'string') { textCharacters += content.length; continue; }
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (part?.type === 'image_url' || part?.type === 'image') hasImage = true;
+      else if (typeof part?.text === 'string') textCharacters += part.text.length;
+    }
+  }
+  const estimate = hasImage ? 4096 : Math.ceil(textCharacters / 2) + 1024;
   return Math.max(2048, Math.min(8192, estimate));
 }
 

@@ -95,11 +95,23 @@ manifest.base.json     Shared manifest (name, icons, permissions, action, comman
 manifest.chrome.json   Chrome overrides (service worker, content scripts)
 manifest.firefox.json  Firefox overrides (gecko settings, polyfill script)
 background.js          Service worker: capture, API calls, caching, routing, streaming
-content.js             Content script: snipping UI, overlay rendering, page sessions
+content.js             Generated bundle of src/content/ (do not edit directly)
 browser-polyfill.js    webextension-polyfill (Firefox compatibility)
 popup.html/.js         Toolbar popup: quick actions and display settings
 options.html/.js       Settings page: providers, languages, appearance, usage
 styles.css             Overlay, bubble, and floating-panel styles
+src/content/           Content-script source, bundled by esbuild into content.js
+  index.js             Entry: startup side effects + message/event listeners
+  state.js             Shared mutable state (was top-level `let` bindings)
+  snip.js              Region-selection (drag) UI
+  capture.js           Screenshot capture + full-page translation
+  translate.js         API request/response wiring + streaming partials
+  bubbles.js           Bubble rendering, fit, edit, drag, overlap resolution
+  pageturn.js          Page-turn detection, auto-translate, overlay clearing
+  session.js           Per-page overlay persistence (save/restore)
+  floatpanel.js        Draggable floating control panel
+  status.js            Toasts + status banner
+  screenshot.js        Save region/page screenshots
 src/shared/
   providers.js         Provider presets and pricing
   schema.js            Structured-output schemas (OCR / combined / translation)
@@ -109,25 +121,27 @@ src/shared/
   storage.js           storage.session wrappers with graceful fallback
   theme.css            Shared dark theme variables
 scripts/
+  bundle-content.js    Bundles src/content/ into root content.js (esbuild)
   build-manifest.js    Merges base + per-browser manifest into manifest.json
-  build-dist.js        Builds clean dist/chrome and dist/firefox folders
+  build-dist.js        Bundles content, then builds clean dist/chrome and dist/firefox
 test/                  Node test suite for the shared modules
 icons/                 Extension icons
 ```
 
 ## Development
 
-The extension loads unbundled; `package.json` only provides linting, tests, and build scripts.
+The service worker (`background.js`) loads as a native ES module. The content script is authored as ES modules under `src/content/` but injected by Chrome as a classic script, so esbuild bundles it into the root `content.js` (an IIFE). `package.json` provides linting, tests, and build scripts.
 
 ```bash
 npm run lint          # ESLint
 npm test              # node --test test/*.test.js
-npm run build         # build dist/chrome and dist/firefox (clean, loadable folders)
+npm run build:content # bundle src/content/ -> content.js
+npm run build         # bundle content + build dist/chrome and dist/firefox
 npm run build:chrome  # write manifest.json for Chrome only
 npm run dev:firefox   # build Firefox manifest and launch web-ext run
 ```
 
-The repo root's `manifest.json` is generated — edit `manifest.base.json` plus the per-browser override files, then run a build script. After editing, reload the extension at `chrome://extensions` (and refresh the target page for content-script changes).
+Two files are generated — never edit them directly: the root `content.js` (edit `src/content/` instead, then `npm run build:content`) and the root `manifest.json` (edit `manifest.base.json` plus the per-browser overrides, then run a build script). `npm run build` regenerates both. After building, reload the extension at `chrome://extensions` (and refresh the target page for content-script changes).
 
 ## Privacy & cost notes
 

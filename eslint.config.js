@@ -7,7 +7,8 @@ import globals from 'globals';
  */
 export default [
   {
-    ignores: ['node_modules/**', 'node_modules - Copy/**', 'logo-concepts/**', 'browser-polyfill.js', 'dist/**']
+    // content.js is a generated esbuild bundle from src/content/ — lint the source, not the artifact.
+    ignores: ['node_modules/**', 'node_modules - Copy/**', 'logo-concepts/**', 'browser-polyfill.js', 'dist/**', 'content.js']
   },
   {
     files: ['**/*.js'],
